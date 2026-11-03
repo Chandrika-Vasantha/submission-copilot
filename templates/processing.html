@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Processing{% endblock %}
+{% block body %}
+<small class="muted">From {{ sub.sender }}</small>
+<h1 style="margin-top:.2rem">{{ sub.subject }}</h1>
+<p class="muted" id="msg">Reading every attachment, running OCR on scanned and photographed pages, then checking them against each other and the guideline.</p>
+
+<div class="route" id="route" aria-live="polite">
+  <div class="fill" id="fill" style="width:0"></div>
+</div>
+
+<h3 style="margin-bottom:.6rem">Attachments <span class="muted" id="cnt"></span></h3>
+<div class="reading" id="docs"></div>
+
+<div class="arrived" id="arrived">
+  <div class="sign" id="sign"><div class="face"><div class="word" id="word"></div><div class="to" id="team"></div></div></div>
+  <a class="btn primary" id="open" href="{{ url_for('submission', sid=sub.id) }}">Open the review</a>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var url = "{{ url_for('progress', sid=sub.id) }}", built = false, n = 0;
+  var labels = {loss_run: 'loss run', no_loss_letter: 'no-loss letter', ifta_return: 'IFTA return', mvr: 'MVR',
+    drivers_license: 'license photo', driver_schedule: 'driver list', vehicle_schedule: 'vehicle list',
+    application: 'application', quote_form: 'quote form', unknown: 'unclassified'};
+  function el(t, c, txt) { var e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; }
+  function tick() {
+    fetch(url).then(function (r) { return r.json(); }).then(function (s) {
+      var route = document.getElementById('route');
+      if (!built) {
+        s.stages.forEach(function (st, i) {
+          var d = el('div', 'stop'); d.id = 'st-' + st.key;
+          d.appendChild(el('div', 'dot', String(i + 1))); d.appendChild(el('div', 'lbl', st.label)); route.appendChild(d);
+        });
+        built = true;
+      }
+      var last = -1;
+      s.stages.forEach(function (st, i) {
+        document.getElementById('st-' + st.key).className = 'stop ' + st.state;
+        if (st.state === 'done') last = i;
+      });
+      var span = 100 - 100 / 7;
+      document.getElementById('fill').style.width = 'calc(' + (Math.max(last, 0) / 6 * span) + '%)';
+      var box = document.getElementById('docs'); box.innerHTML = '';
+      var read = 0;
+      s.documents.forEach(function (d) {
+        var row = el('div', 'd' + (d.read ? ' ok' : ''));
+        row.appendChild(el('span', 'ic'));
+        var t = el('div'); t.style.minWidth = 0;
+        t.appendChild(el('div', 'f', d.file));
+        var info = d.read ? (d.types || []).map(function (x) { return labels[x] || x; }).join(' + ') + ' · ' + d.pages + (d.pages > 1 ? ' pages' : ' page') +
+          (d.ocr_pages ? ' · ' + d.ocr_pages + ' OCR' : '') + (d.mismatch ? ' · name was misleading' : '') : 'waiting…';
+        t.appendChild(el('div', 't', info)); row.appendChild(t); box.appendChild(row);
+        if (d.read) read++;
+      });
+      document.getElementById('cnt').textContent = read + ' of ' + s.documents.length + ' read';
+      if (s.error) { document.getElementById('msg').textContent = 'Processing failed: ' + s.status; return; }
+      if (s.done) {
+        var sign = document.getElementById('sign');
+        sign.className = 'sign ' + (s.decision || '');
+        document.getElementById('word').textContent = s.decision || '';
+        document.getElementById('team').textContent = s.team || '';
+        document.getElementById('arrived').className = 'arrived show';
+        document.getElementById('msg').textContent = (s.insured || 'Submission') + ' is ready for review.';
+        return;
+      }
+      if (++n < 900) setTimeout(tick, 800);
+    }).catch(function () { setTimeout(tick, 1500); });
+  }
+  tick();
+})();
+</script>
+{% endblock %}

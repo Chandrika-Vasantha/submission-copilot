@@ -1,0 +1,29 @@
+AL, AZ, AR, CA, SC, SD, TN, TX*, UT, VA, WV, WI, WY
+*TX: Accounts must operate north of Interstate 10 (I-10). Illinois-based accounts on selective basis.
+COMPANY GUIDELINES
+Knight Specialty Insurance Company
+Excess & Surplus Lines Carrier - Trucking Program
+One-Page Mockup Guide | For case-study purposes only (fictitious guidelines)
+Program Appetite | Coverage Snapshot
+
+Target risk: Semi-trucks hauling general freight across state lines.
+Not eligible: Straight trucks, tow trucks, dump trucks, concrete mixers/pumpers, cranes, or mobile equipment regardless of GVW.
+New ventures: Sole proprietors, partnerships, and LLCs acceptable with 2 years documented CDL experience and resume/letter of experience; corporations subject to underwriter review. | 
+Auto liability deductibles: Not allowed.
+Auto physical damage: Not available.
+Available States
+Submission Requirements | Safe Driver Criteria
+
+Complete submission required: application with FEIN/SSN and MC/Docket number; current loss runs valued within 60 days, including expiring year and at least 3 prior years; most recent 4 quarters of IFTA reports; driver schedule with MVRs dated within 90 days of the application; vehicle schedule with year, make, 17-character VIN and stated value. | 
+Driver baseline: Valid U.S. driver license and CDL; minimum 2 years CDL driving experience in the U.S. or Canada; age 23+; drivers age 65+ must provide acceptable DOT medical examination report.
+Quick Decline / Escalation Flags
+Driver point thresholds | Generally no more than 6 points in 3 years or 4 points in 12 months.
+Unacceptable driver history | Examples include DUI/DWI in past 5 years; vehicular homicide/assault; negligent or reckless driving; speeding over 30 mph above limit; hit-and-run; fleeing/eluding; felony involving a motor vehicle; passing a stopped school bus.
+Prohibited exposures | Hazardous materials, lithium battery cargo, operations within 50 miles of the USA/Mexico border, non-listed states, serious SAFER violations, towing/recovery, intermodal/container, and waste disposal.
+Selective exposures | Automobile haulers; box trucks/transit vans with minimum premium $250,000; accounts seeking less than $13,000 per power unit must have at least 20 power units.
+Prior insurance | Continuous commercial auto coverage for the most recent 3 years; any lapse over 30 days must be explained before quoting. Losses must be reported for every prior term listed on the application.
+Routing & referral | 1-10 power units: Small Fleet underwriting; 11+ power units: Fleet underwriting. Any prohibited exposure or unacceptable driver: decline. Missing required documents, conflicting information or any other flag above: refer to an underwriter for manual review.
+
+Submit accounts: submissions@knight-casestudy.example | 
+Risk selection questions: Case Study Underwriting Desk | (555) 010-0142 |
+uw-questions@knight-casestudy.example

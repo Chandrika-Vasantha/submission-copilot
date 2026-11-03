@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.file }}{% endblock %}
+{% block body %}
+<p><a href="{{ url_for('submission', sid=sid) }}#documents">← Back to the review</a></p>
+<h1>{{ doc.file }}</h1>
+<p>Page {{ pg.n }} of {{ doc.pages|length }} · identified as <b>{{ pg.label }}</b>
+  <span class="conf">{{ '%.0f'|format((pg.confidence or 0)*100) }}%</span> ·
+  {% if pg.method == 'ocr' %}image-only page, read by <b>OCR</b> (confidence {{ pg.ocr_conf }}){% elif pg.method == 'xlsx' %}spreadsheet cells{% else %}digital text layer{% endif %}</p>
+<p class="muted" style="font-size:.88rem">Why: {{ pg.reason }}{% if pg.quality %}. Image clean-up: rotated {{ pg.quality.rotation_fixed or 0 }}°, straightened {{ pg.quality.skew_deg or 0 }}°
+  {%- if pg.quality.passes %}; OCR passes {% for n, c in pg.quality.passes %}{{ n }} {{ c }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}.{% endif %}</p>
+<div class="pages" style="margin:.8rem 0 1rem">
+{% for p in doc.pages %}<a class="pg {{ 'ocr' if p.method == 'ocr' }}" href="{{ url_for('source_view', sid=sid, file=doc.file, page=p.n) }}" {% if p.n==pg.n %}style="border-color:var(--ink);font-weight:700;background:#fff"{% endif %}>p.{{ p.n }} {{ p.doc_type.replace('_',' ') }}</a>{% endfor %}
+</div>
+<div class="viewer">
+  <div><h3>Original</h3>
+    {% if pg.image %}<img src="{{ url_for('page_image', sid=sid, rel=pg.image) }}" alt="Page {{ pg.n }} of {{ doc.file }}" style="margin-top:.4rem">{% else %}<p class="muted">Spreadsheet sheet: the cells are shown on the right exactly as read.</p>{% endif %}</div>
+  <div><h3>What the system read</h3><pre>{{ text_html }}</pre></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>var h=document.getElementById('hl'); if(h) h.scrollIntoView({block:'center'});</script>{% endblock %}

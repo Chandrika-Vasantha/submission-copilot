@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Rules{% endblock %}
+{% block body %}
+<h1>{{ cfg.program }}</h1>
+<p class="muted">Version {{ cfg.version }} · file <code>{{ path }}</code>. Underwriting owns this file; changing a threshold or action changes outcomes without a code release, and every decision records the version and hash it ran under.</p>
+<div class="panel" style="margin-top:1rem">
+<table>
+<thead><tr><th>Rule</th><th>What it checks</th><th>Guideline text</th><th>Action on fail</th></tr></thead>
+<tbody>
+{% for r in cfg.rules %}
+<tr class="rule-row"><td>{{ r.id }}</td><td>{{ r.title }}<br><small>{{ r.category }}</small></td><td class="gl">{{ r.guideline }}</td>
+<td><span class="tag t-{{ r.action }}">{{ r.action }}</span></td></tr>
+{% endfor %}
+</tbody></table>
+</div>
+<details style="margin-top:1rem"><summary>Raw YAML</summary><pre style="white-space:pre-wrap">{{ text }}</pre></details>
+{% endblock %}

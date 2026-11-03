@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block head %}{% if subs|selectattr('status','in',['queued','processing'])|list %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block body %}
+<h1>Submission inbox</h1>
+<p class="muted">Agent emails to submissions@knight-casestudy.example land here, already read, cross-checked against each other and run through the trucking guideline.</p>
+
+<div class="intake">
+  <form class="drop" id="drop" method="post" action="{{ url_for('ingest_upload') }}" enctype="multipart/form-data">
+    <div class="hint"><b>Drop an agent email or its attachments</b>
+      <small>.eml, PDFs, scans, photos, spreadsheets or a .zip - file names don't need to be right</small></div>
+    <input type="file" name="files" id="files" multiple>
+    <label for="files" class="btn ghost">Choose files</label>
+    <button class="btn primary" id="go" disabled>Process</button>
+    <small id="picked" class="muted" style="flex-basis:100%"></small>
+  </form>
+  <div class="samples">
+    <small>Or simulate an incoming email</small>
+    <form method="post" action="{{ url_for('ingest_sample') }}"><input type="hidden" name="which" value="sample">
+      <button class="btn" style="width:100%">Cobalt Mesa sample package</button></form>
+    {% if has_stress %}<form method="post" action="{{ url_for('ingest_sample') }}"><input type="hidden" name="which" value="stress">
+      <button class="btn ghost" style="width:100%">Same package, messy version</button></form>{% endif %}
+  </div>
+</div>
+
+<div class="queue">
+  <div class="row head"><span>Received</span><span>Insured</span><span>From</span><span>Status</span><span>Recommendation</span></div>
+  {% for s in subs %}
+  {% set st = s.status or '' %}
+  <a class="row" href="{{ url_for('submission', sid=s.id) }}">
+    <span>{{ s.received_at[5:10].replace('-','/') }} <small>{{ s.received_at[11:16] }} UTC</small></span>
+    <span><span class="ins">{{ s.insured or 'Reading attachments…' }}</span><div class="sub">{{ s.subject }}</div></span>
+    <span class="sub">{{ s.sender.split('<')[0] }}</span>
+    <span class="status {{ 'busy' if st in ('queued','processing') else 'err' if st.startswith('error') else 'wait' if st == 'awaiting agent' else 'ready' }}">{{ st }}</span>
+    <span>{% if s.decision %}<span class="pill {{ s.decision }}">{{ s.decision }}</span> <small>{{ (s.team or '').replace(' Underwriting','') }}</small>{% endif %}</span>
+  </a>
+  {% else %}
+  <div class="empty">No submissions yet. Drop files above or simulate the sample email to watch one come in.</div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var drop = document.getElementById('drop'), input = document.getElementById('files'),
+      go = document.getElementById('go'), picked = document.getElementById('picked');
+  function show() {
+    var n = input.files.length;
+    go.disabled = !n;
+    picked.textContent = n ? n + ' file' + (n > 1 ? 's' : '') + ': ' + Array.from(input.files).map(function (f) { return f.name; }).join(', ') : '';
+  }
+  input.addEventListener('change', show);
+  ['dragenter', 'dragover'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (ev) { input.files = ev.dataTransfer.files; show(); });
+})();
+</script>
+{% endblock %}

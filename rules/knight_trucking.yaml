@@ -1,0 +1,244 @@
+# Knight Specialty Insurance Company - Trucking Program (case-study mockup guideline)
+# Business-owned rule set. Each rule cites the guideline text it implements.
+# action:  decline -> prohibited / unacceptable (recommend decline, UW confirms)
+#          refer   -> manual underwriter review
+#          missing -> required item absent (refer + request from agent)
+#          info    -> shown to the underwriter, does not change routing
+# Changing a threshold or action here changes outcomes without a code release;
+# every decision stores this file's version + hash for audit.
+
+program: Knight Specialty - Trucking Program (E&S)
+version: 2026.10-mockup.1
+as_of_basis: application_date   # MVR / loss-run freshness measured from the application date
+
+available_states: [AL, AZ, AR, CA, SC, SD, TN, TX, UT, VA, WV, WI, WY]
+selective_states: [IL]           # "Illinois-based accounts on selective basis"
+
+routing:
+  - {max_units: 10, team: Small Fleet Underwriting}
+  - {max_units: 9999, team: Fleet Underwriting}
+
+rules:
+  # ---------------- Submission requirements ----------------
+  - id: SUB-01
+    title: Application received with FEIN/SSN
+    category: Submission requirements
+    guideline: "application with FEIN/SSN and MC/Docket number"
+    check: application_fein
+    action: missing
+  - id: SUB-02
+    title: MC / Docket number provided
+    category: Submission requirements
+    guideline: "application with FEIN/SSN and MC/Docket number"
+    check: mc_number
+    action: missing
+  - id: SUB-03
+    title: Loss runs valued within 60 days
+    category: Submission requirements
+    guideline: "current loss runs valued within 60 days"
+    check: loss_runs_current
+    params: {max_age_days: 60}
+    action: missing
+  - id: SUB-04
+    title: Loss runs cover expiring year + 3 prior years
+    category: Submission requirements
+    guideline: "including expiring year and at least 3 prior years"
+    check: loss_run_years
+    params: {prior_years: 3}
+    action: missing
+  - id: SUB-05
+    title: Most recent 4 quarters of IFTA
+    category: Submission requirements
+    guideline: "most recent 4 quarters of IFTA reports"
+    check: ifta_quarters
+    params: {quarters: 4, filing_grace_days: 31}
+    action: missing
+  - id: SUB-06
+    title: MVR for every driver, dated within 90 days
+    category: Submission requirements
+    guideline: "driver schedule with MVRs dated within 90 days of the application"
+    check: mvrs_current
+    params: {max_age_days: 90}
+    action: missing
+  - id: SUB-07
+    title: Vehicle schedule complete (year, make, 17-char VIN, stated value)
+    category: Submission requirements
+    guideline: "vehicle schedule with year, make, 17-character VIN and stated value"
+    check: vehicle_schedule_complete
+    action: missing
+  - id: SUB-08
+    title: Application signed and dated
+    category: Submission requirements
+    guideline: "(underwriting practice) unsigned applications cannot be bound"
+    check: application_signed
+    action: missing
+
+  # ---------------- Appetite ----------------
+  - id: APP-01
+    title: Target risk - semi-trucks / tractors only
+    category: Program appetite
+    guideline: "Not eligible: Straight trucks, tow trucks, dump trucks, concrete mixers/pumpers, cranes, or mobile equipment regardless of GVW."
+    check: eligible_vehicle_types
+    params: {ineligible: [STRAIGHT, TOW, DUMP, MIXER, PUMPER, CRANE, MOBILE EQUIPMENT, BOX TRUCK]}
+    action: decline
+  - id: APP-02
+    title: New venture requirements
+    category: Program appetite
+    guideline: "New ventures: ... 2 years documented CDL experience and resume/letter of experience; corporations subject to underwriter review."
+    check: new_venture
+    params: {min_years_in_business: 3}
+    action: refer
+  - id: APP-03
+    title: Domiciled in an available state
+    category: Program appetite
+    guideline: "Available States: AL, AZ, AR, CA, SC, SD, TN, TX*, UT, VA, WV, WI, WY"
+    check: domicile_state
+    action: decline
+  - id: APP-04
+    title: Operations in non-listed states
+    category: Program appetite
+    guideline: "Prohibited exposures: ... non-listed states"
+    check: operations_non_listed_states
+    # ASSUMPTION: 'Available States' governs domicile/garaging (the target risk hauls 'across
+    # state lines'). Travel through non-listed states is referred, not auto-declined.
+    # Set action: decline to apply the strict reading.
+    params: {refer_share_over: 0.0}
+    action: refer
+  - id: APP-05
+    title: Texas operations north of I-10
+    category: Program appetite
+    guideline: "*TX: Accounts must operate north of Interstate 10 (I-10)."
+    check: texas_i10
+    action: refer
+  - id: APP-06
+    title: No auto liability deductible
+    category: Coverage
+    guideline: "Auto liability deductibles: Not allowed."
+    check: no_al_deductible
+    action: refer
+  - id: APP-07
+    title: Physical damage requested but not available
+    category: Coverage
+    guideline: "Auto physical damage: Not available."
+    check: apd_requested
+    action: info
+  - id: APP-08
+    title: Coverage requested outside program snapshot (cargo)
+    category: Coverage
+    guideline: "Coverage Snapshot lists auto liability only (APD not available)."
+    check: cargo_requested
+    action: info
+
+  # ---------------- Drivers ----------------
+  - id: DRV-01
+    title: Valid U.S. license and CDL
+    category: Safe driver criteria
+    guideline: "Valid U.S. driver license and CDL"
+    check: driver_cdl
+    action: refer
+  - id: DRV-02
+    title: Minimum 2 years CDL experience
+    category: Safe driver criteria
+    guideline: "minimum 2 years CDL driving experience in the U.S. or Canada"
+    check: driver_experience
+    params: {min_years: 2}
+    action: refer
+  - id: DRV-03
+    title: Driver age 23+
+    category: Safe driver criteria
+    guideline: "age 23+"
+    check: driver_min_age
+    params: {min_age: 23}
+    action: refer
+  - id: DRV-04
+    title: Drivers 65+ provide DOT medical
+    category: Safe driver criteria
+    guideline: "drivers age 65+ must provide acceptable DOT medical examination report"
+    check: driver_senior
+    params: {age: 65}
+    action: missing
+  - id: DRV-05
+    title: Point thresholds (6 in 3 yrs / 4 in 12 mo)
+    category: Quick decline / escalation
+    guideline: "Generally no more than 6 points in 3 years or 4 points in 12 months."
+    check: driver_points
+    params: {max_3yr: 6, max_12mo: 4}
+    action: refer
+  - id: DRV-06
+    title: Unacceptable driver history
+    category: Quick decline / escalation
+    guideline: "DUI/DWI in past 5 years; vehicular homicide/assault; negligent or reckless driving; speeding over 30 mph above limit; hit-and-run; fleeing/eluding; felony involving a motor vehicle; passing a stopped school bus."
+    check: driver_major_violations
+    params: {lookback_years: 5}
+    action: decline
+  - id: DRV-07
+    title: Drivers in loss history are scheduled
+    category: Quick decline / escalation
+    guideline: "(derived) Losses must be reported for every term; drivers involved must be on the driver schedule with MVR."
+    check: loss_drivers_scheduled
+    action: refer
+
+  # ---------------- Prohibited / selective ----------------
+  - id: PRO-01
+    title: No hazardous materials or lithium batteries
+    category: Prohibited exposures
+    guideline: "Hazardous materials, lithium battery cargo"
+    check: hazmat
+    action: decline
+  - id: PRO-02
+    title: No intermodal, towing/recovery, waste disposal
+    category: Prohibited exposures
+    guideline: "towing/recovery, intermodal/container, and waste disposal"
+    check: prohibited_operations
+    params: {keywords: [INTERMODAL, CONTAINER, TOW, RECOVERY, WASTE, GARBAGE, REFUSE]}
+    action: decline
+  - id: PRO-03
+    title: Not within 50 miles of the USA/Mexico border
+    category: Prohibited exposures
+    guideline: "operations within 50 miles of the USA/Mexico border"
+    check: border_operations
+    action: refer
+  - id: PRO-04
+    title: No serious SAFER violations
+    category: Prohibited exposures
+    guideline: "serious SAFER violations"
+    check: safer_lookup
+    action: refer
+  - id: SEL-01
+    title: Selective exposures
+    category: Selective exposures
+    guideline: "Automobile haulers; box trucks/transit vans with minimum premium $250,000; accounts seeking less than $13,000 per power unit must have at least 20 power units."
+    check: selective_exposures
+    params: {min_rate_per_unit: 13000, min_units_for_low_rate: 20}
+    action: refer
+
+  # ---------------- Prior insurance ----------------
+  - id: PRI-01
+    title: Continuous coverage for most recent 3 years
+    category: Prior insurance
+    guideline: "Continuous commercial auto coverage for the most recent 3 years"
+    check: continuous_coverage
+    params: {years: 3}
+    action: refer
+  - id: PRI-02
+    title: Lapses over 30 days explained
+    category: Prior insurance
+    guideline: "any lapse over 30 days must be explained before quoting"
+    check: coverage_lapses
+    params: {max_gap_days: 30}
+    action: missing
+  - id: PRI-03
+    title: Losses reported for every prior term
+    category: Prior insurance
+    guideline: "Losses must be reported for every prior term listed on the application."
+    check: losses_every_term
+    action: missing
+
+  # ---------------- Data integrity ----------------
+  - id: DQ-01
+    title: No unresolved material conflicts
+    category: Routing & referral
+    guideline: "conflicting information ... refer to an underwriter for manual review"
+    check: open_conflicts
+    params: {severities: [high, medium]}
+    action: refer

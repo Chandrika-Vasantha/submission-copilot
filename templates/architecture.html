@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}How it works{% endblock %}
+{% block body %}
+<h1>How a submission flows</h1>
+<p class="muted">Steps in processing order. Each box notes what the prototype does and, where it differs, the production equivalent.</p>
+
+<div class="panel" style="margin-top:1rem;overflow-x:auto">
+<svg viewBox="0 0 1240 560" width="100%" role="img" aria-label="Architecture: email intake, document processing, extraction, reconciliation, rules, AI analysis, underwriter workbench" style="min-width:900px;font-family:Barlow,system-ui,sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14213d"/></marker>
+  </defs>
+  <style>
+    .box{fill:#fff;stroke:#14213d;stroke-width:1.5}
+    .ai{fill:#eef3fb;stroke:#1f4fa3;stroke-width:1.5}
+    .rule{fill:#e1efe6;stroke:#1e6b45;stroke-width:1.5}
+    .store{fill:#f4f6f9;stroke:#56627a;stroke-width:1.2;stroke-dasharray:4 3}
+    .t{font-size:15px;font-weight:700;fill:#14213d}
+    .s{font-size:12px;fill:#56627a}
+    .ln{stroke:#14213d;stroke-width:1.5;fill:none;marker-end:url(#a)}
+    .dl{stroke:#56627a;stroke-width:1.1;fill:none;stroke-dasharray:3 3}
+  </style>
+  <!-- row 1: pipeline -->
+  <rect class="box" x="10" y="40" width="160" height="110" rx="8"/>
+  <text class="t" x="24" y="66">1 Email intake</text>
+  <text class="s" x="24" y="88">Raw .eml stored + hashed</text><text class="s" x="24" y="104">zips expanded, SHA dedupe</text>
+  <text class="s" x="24" y="132">Prod: Graph/SES → queue</text>
+
+  <rect class="box" x="200" y="40" width="180" height="110" rx="8"/>
+  <text class="t" x="214" y="66">2 Load + OCR</text>
+  <text class="s" x="214" y="88">type sniffed from bytes</text><text class="s" x="214" y="104">text layer or 300dpi OCR:</text><text class="s" x="214" y="118">rotate, deskew, de-shadow</text>
+  <text class="s" x="214" y="140">Prod: Textract / Azure DI</text>
+
+  <rect class="box" x="410" y="40" width="180" height="110" rx="8"/>
+  <text class="t" x="424" y="66">3 Classify pages</text>
+  <text class="s" x="424" y="88">content signatures per page</text><text class="s" x="424" y="104">file name = weak prior only</text>
+  <text class="s" x="424" y="126" fill="#1f4fa3">low margin → LLM</text>
+
+  <rect class="box" x="620" y="40" width="180" height="110" rx="8"/>
+  <text class="t" x="634" y="66">4 Extract</text>
+  <text class="s" x="634" y="88">type-specific parsers</text><text class="s" x="634" y="104">every value = Fact(file, page,</text><text class="s" x="634" y="118">method, confidence)</text>
+  <text class="s" x="634" y="140" fill="#1f4fa3">low OCR → vision re-read</text>
+
+  <rect class="box" x="830" y="40" width="190" height="110" rx="8"/>
+  <text class="t" x="844" y="66">5 Reconcile</text>
+  <text class="s" x="844" y="88">entity resolution (licence #,</text><text class="s" x="844" y="104">VIN, name+DOB); duplicates;</text><text class="s" x="844" y="118">conflicts + source authority</text>
+  <text class="s" x="844" y="140">validators: VIN, sums, dates</text>
+
+  <rect class="rule" x="1050" y="40" width="180" height="110" rx="8"/>
+  <text class="t" x="1064" y="66">6 Rules engine</text>
+  <text class="s" x="1064" y="88">YAML from the guideline</text><text class="s" x="1064" y="104">decline / refer / missing</text><text class="s" x="1064" y="118">routing by power units</text>
+  <text class="s" x="1064" y="140">versioned + hashed</text>
+
+  <path class="ln" d="M170 95 H198"/><path class="ln" d="M380 95 H408"/><path class="ln" d="M590 95 H618"/>
+  <path class="ln" d="M800 95 H828"/><path class="ln" d="M1020 95 H1048"/>
+
+  <!-- row 2 -->
+  <rect class="ai" x="830" y="220" width="400" height="120" rx="8"/>
+  <text class="t" x="846" y="248">7 AI analyst (Claude, or offline heuristics)</text>
+  <text class="s" x="846" y="272">Summary, concerns, recommendations, agent email</text>
+  <text class="s" x="846" y="290">Gets facts + rule results; must cite evidence ids</text>
+  <text class="s" x="846" y="308">Uncited claims flagged “ungrounded”, confidence capped</text>
+  <text class="s" x="846" y="326">Never changes routing - rules decide</text>
+  <path class="ln" d="M1140 150 V218"/>
+
+  <rect class="box" x="300" y="220" width="460" height="120" rx="8"/>
+  <text class="t" x="316" y="248">8 Underwriter workbench (Flask)</text>
+  <text class="s" x="316" y="272">Inbox → decision sign → summary, documents, extracted data,</text>
+  <text class="s" x="316" y="290">missing items, conflicts, AI findings, rules, next actions, audit</text>
+  <text class="s" x="316" y="308">Click any value → source page image + OCR text</text>
+  <text class="s" x="316" y="326">Resolve conflicts, waive rules (with reason), send agent request</text>
+  <path class="ln" d="M828 280 H762"/>
+
+  <rect class="box" x="10" y="220" width="250" height="120" rx="8"/>
+  <text class="t" x="26" y="248">9 Human decisions</text>
+  <text class="s" x="26" y="272">re-derive decision after edits</text>
+  <text class="s" x="26" y="290">outbox: request to agent</text>
+  <text class="s" x="26" y="308">replies re-enter at step 1,</text>
+  <text class="s" x="26" y="326">linked to the same submission</text>
+  <path class="ln" d="M298 280 H262"/>
+  <path class="ln" d="M90 220 V152"/>
+
+  <!-- storage -->
+  <rect class="store" x="10" y="400" width="1220" height="130" rx="8"/>
+  <text class="t" x="26" y="428">Storage &amp; audit</text>
+  <text class="s" x="26" y="452">Prototype: SQLite (submissions, append-only audit) + per-submission folder (original .eml, attachments, page images, result.json)</text>
+  <text class="s" x="26" y="472">Production: Postgres + object storage with object-lock (originals immutable), KMS encryption, audit stream to WORM / SIEM</text>
+  <text class="s" x="26" y="492">Each decision stores: input hashes, rules version + hash, model id + prompt version, every human override with reason</text>
+  <text class="s" x="26" y="512">Orchestration: prototype runs steps in-process with timing; production = queue + durable workflow (Step Functions / Temporal), OCR fan-out per document</text>
+  <path class="dl" d="M90 340 V398"/><path class="dl" d="M530 340 V398"/><path class="dl" d="M1030 340 V398"/>
+</svg>
+</div>
+
+<div class="grid2" style="margin-top:1rem">
+  <div class="panel"><h3>Where AI is used, and where it is not</h3>
+    <ul>
+      <li>Classification: deterministic first; the LLM only sees pages with a weak margin.</li>
+      <li>Extraction: deterministic parsers + validators; the vision model re-reads scans whose OCR is weak or whose numbers fail a check (e.g. IFTA rows that don't sum to the printed total).</li>
+      <li>Analysis: the LLM explains, spots patterns and drafts the agent email, with evidence citations.</li>
+      <li>Decisions: never the LLM. The YAML rules decide; people confirm.</li>
+    </ul></div>
+  <div class="panel"><h3>Confidence</h3>
+    <ul>
+      <li>Base by method: spreadsheet 97%, text layer 95%, OCR 85% scaled by tesseract word confidence, vision 88%.</li>
+      <li>Validators raise or cut it: totals reconcile, VIN check digit, dates parse.</li>
+      <li>Agreement across documents raises it; a conflict drops it to 60% of the best source until a person resolves it.</li>
+      <li>Findings: capped by evidence; uncited LLM findings capped at 40%.</li>
+    </ul></div>
+</div>
+{% endblock %}

@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% set files = r.documents|map(attribute='file')|list %}
+{% set insured = r.business.insured_name.value or '###' %}
+{% macro chip(label, hl='') -%}
+  {%- set fp = label|src -%}
+  {%- if fp[0] in files -%}<a class="chip" href="{{ url_for('source_view', sid=r.submission_id, file=fp[0], page=fp[1] or 1, hl=hl) }}" title="Open the source page">{{ fp[0].replace(' - ' ~ insured, '').replace(insured ~ ' - ', '')|truncate(30, True, '…') }}{% if fp[1] %} p.{{ fp[1] }}{% endif %}</a>
+  {%- else -%}<span class="chip" style="color:#5b667c">{{ label }}</span>{%- endif -%}
+{%- endmacro %}
+{% macro conf(c) -%}{% if c is not none %}<span class="conf {{ 'lo' if c < 0.6 else 'mid' if c < 0.85 else '' }}" title="Extraction confidence">{{ '%.0f'|format(c*100) }}%</span>{% endif %}{%- endmacro %}
+{% macro field(name, label) -%}
+  {%- set f = r.business.get(name) -%}
+  <dt>{{ label }}</dt><dd>
+  {%- if f and f.value is not none -%}
+    <b>{% if f.value is sameas true or f.value is sameas false %}{{ 'Yes' if f.value else 'No' }}{% elif name in ('al_limit','cargo_limit') %}{{ f.value|money }}{% elif name == 'telematics_pct' %}{{ f.value|float|pct }}{% else %}{{ f.value|us }}{% endif %}</b>
+    {{ conf(f.confidence) }} {% if f.status == 'conflict' %}<a class="tag t-open" href="#{{ f.conflict }}">conflict {{ f.conflict }}</a>{% elif f.status == 'agreed' %}<span class="tag t-agreed">{{ f.sources|length }} docs agree</span>{% endif %}
+    <br>{% for s in f.sources[:3] %}{{ chip(s.source.file ~ (' p.' ~ s.source.page if s.source.page else ''), s.source.snippet) }}{% endfor %}
+  {%- else -%}<span class="tag t-missing">missing</span>{% if f %}{% for s in f.sources[:1] %} {{ chip(s.source.file ~ (' p.' ~ s.source.page if s.source.page else '')) }}{% endfor %}{% endif %}
+  {%- endif -%}</dd>
+{%- endmacro %}
+{% macro rule_row(x) %}
+    <tr class="rule-row" id="r-{{ x.id }}">
+      <td>{{ x.id }}<br><small style="font-weight:400;font-family:var(--body)">{{ x.title }}</small></td>
+      <td>{% if x.waived %}<span class="tag t-waived">waived</span>{% else %}<span class="tag t-{{ 'pass' if x.effect=='none' else x.effect }}">{{ 'pass' if x.effect=='none' else x.effect }}</span>{% endif %}{% if x.status == 'unknown' %}<br><small>can't verify</small>{% endif %}</td>
+      <td>{{ x.message }}{% if x['items'] %}<ul>{% for i in x['items'] %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+        {% if x.waived %}<br><small>Waived by {{ x.waived.by }}: “{{ x.waived.reason }}”</small>
+        {% elif x.effect in ('refer','decline') %}<details><summary>Waive with reason</summary>
+          <form method="post" action="{{ url_for('waive_rule', sid=r.submission_id, rid=x.id) }}" style="display:flex;gap:.4rem;margin-top:.35rem;flex-wrap:wrap">
+          <input type="text" name="reason" required placeholder="Reason (recorded in the audit trail)" size="36"><button class="btn small">Waive</button></form></details>{% endif %}</td>
+      <td class="gl hide-sm">“{{ x.guideline }}”</td>
+    </tr>
+{% endmacro %}
+{% macro conflict_card(c) %}
+  <div class="conflict {{ c.status }} {{ c.severity }}" id="{{ c.id }}">
+    <h3>{{ c.field.replace('_',' ')|capitalize }} <small class="muted">{{ c.id }} · {{ c.entity }}</small>
+      <span class="tag t-{{ c.severity }}">{{ c.severity }}</span>{% if c.status != 'open' %} <span class="tag t-{{ c.status }}">{{ c.status }}</span>{% endif %}</h3>
+    <div class="vals">{% for v in c['values'] %}<div class="val">
+      <b>{% if v.value is mapping or (v.value is iterable and v.value is not string) %}<small>{{ v.value }}</small>{% else %}{{ v.value }}{% endif %}</b> {{ conf(v.confidence) }}<br>
+      {{ chip(v.source, v.snippet) }}{% for a in v.also_in %}{{ chip(a) }}{% endfor %}{% if v.also_in %}<br><small>{{ v.also_in|length + 1 }} documents say this</small>{% endif %}</div>{% endfor %}</div>
+    <p><span class="proposed">Proposed: {{ c.proposed }}.</span> {{ c.rationale }}</p>
+    {% if c.resolution %}<p><span class="tag t-resolved">resolved</span> {{ c.resolution.value }}{% if c.resolution.note %} - “{{ c.resolution.note }}”{% endif %} <small>({{ c.resolution.by }}, {{ c.resolution.at[:16].replace('T',' ') }})</small></p>
+    {% elif c.status == 'open' %}
+    <form method="post" action="{{ url_for('resolve_conflict', sid=r.submission_id, cid=c.id) }}">
+      <select name="choice" aria-label="Resolution for {{ c.id }}">
+        <option>{{ c.proposed }}</option>
+        {% for v in c['values'] %}{% if (v.value is string or v.value is number) and v.value != c.proposed %}<option>{{ v.value }}</option>{% endif %}{% endfor %}
+        <option>Pending agent confirmation</option>
+      </select>
+      <input type="text" name="note" placeholder="Note for the file" size="32">
+      <button class="btn small">Resolve</button>
+    </form>{% endif %}
+  </div>
+{% endmacro %}
+{% block title %}{{ r.business.insured_name.value }}{% endblock %}
+{% block body %}
+{% set rules = r.rules %}
+{% set open_conf = r.conflicts|selectattr('status','equalto','open')|list %}
+{% set closed_conf = r.conflicts|rejectattr('status','equalto','open')|list %}
+{% set flagged = rules.results|rejectattr('effect','equalto','none')|list %}
+{% set passed = rules.results|selectattr('effect','equalto','none')|list %}
+{% set n_flag = rules.counts.decline + rules.counts.refer %}
+{% set al_inc = r.loss_terms|selectattr('line','equalto','AL')|map(attribute='incurred')|select('number')|sum %}
+
+<div class="layout">
+<aside class="rail">
+  <div class="sign {{ rules.decision }}" role="status" aria-label="Recommendation {{ rules.decision }} to {{ rules.team }}">
+    <div class="face">
+      <div class="word">{{ rules.decision }}</div>
+      <div class="to">{{ rules.team }}</div>
+      <div class="why">{{ rules.reason }}</div>
+    </div>
+  </div>
+  <div class="facts">
+    <div><span>Power units</span><b>{{ r.unit_count }}</b></div>
+    <div><span>Drivers</span><b>{{ r.drivers|length }}</b></div>
+    <div><span>IFTA miles, 4 qtrs</span><b>{{ r.ifta.total_miles|num }}</b></div>
+    <div><span>AL incurred</span><b>{{ al_inc|money }}</b></div>
+    <div class="{{ 'warn' if open_conf }}"><span>Open conflicts</span><b>{{ open_conf|length }}</b></div>
+    <div class="{{ 'warn' if r.missing }}"><span>Items to request</span><b>{{ r.missing|length }}</b></div>
+  </div>
+  <nav aria-label="Sections"><ul class="toc" id="toc">
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#documents">Documents <span class="n">{{ r.documents|length }}</span></a></li>
+    <li><a href="#extracted">Extracted data</a></li>
+    <li><a href="#missing">Missing info <span class="n {{ 'warn' if r.missing }}">{{ r.missing|length }}</span></a></li>
+    <li><a href="#conflicts">Conflicts <span class="n {{ 'warn' if open_conf }}">{{ open_conf|length }} open</span></a></li>
+    <li><a href="#findings">AI findings <span class="n">{{ r.analysis.findings|length }}</span></a></li>
+    <li><a href="#rules">Rules <span class="n {{ 'warn' if n_flag }}">{{ n_flag }} to review</span></a></li>
+    <li><a href="#actions">Next actions</a></li>
+    <li><a href="#audit">Audit trail</a></li>
+  </ul></nav>
+</aside>
+
+<div class="content">
+  <div class="title-block" style="margin-bottom:1.6rem">
+    <div class="from">From {{ r.email.from }} · {{ r.email.subject }}</div>
+    <h1>{{ r.business.insured_name.value }}</h1>
+    <div class="idline">
+      <span>DOT <b>{{ r.business.dot_number.value }}</b></span><span>MC <b>{{ r.business.mc_number.value }}</b></span>
+      <span>{{ r.business.mailing_address.value }}</span>
+      <span>Effective <b>{{ r.business.effective_date.value|us }}</b></span><span>Applied <b>{{ r.business.application_date.value|us }}</b></span>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <section id="summary">
+    <header><h2>Underwriter brief</h2><span class="count">written by {{ r.analysis.engine }}</span></header>
+    <div class="brief">
+      <div class="panel"><p class="lead">{{ r.analysis.summary }}</p></div>
+      <div class="panel">
+        <h3>Biggest concerns</h3>
+        <ul class="minus">{% for f in r.analysis.findings|selectattr('severity','equalto','high')|list %}{% if loop.index <= 5 %}<li><a href="#f-{{ f.id }}">{{ f.title }}</a></li>{% endif %}{% endfor %}</ul>
+        <h3>What works for this risk</h3>
+        <ul class="plus">{% for p in r.analysis.positives %}<li>{{ p }}</li>{% endfor %}</ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOCUMENTS -->
+  <section id="documents">
+    <header><h2>Documents received</h2><span class="count">{{ r.documents|length }} attachments · {{ r.documents|map(attribute='pages')|map('length')|sum }} pages and sheets · read in {{ r.processing_seconds }}s</span></header>
+    <div class="panel doclist">
+    {% for d in r.documents %}
+      <div class="doc">
+        <div><div class="fname">{{ d.file }}</div><small>{{ d.kind|upper }} · sha {{ d.sha256 }}</small>
+          {% for e in d.errors %}<br><span class="warnflag">{{ e }}</span>{% endfor %}</div>
+        <div>{% for t in d.content_types %}<span class="tag t-type">{{ t.replace('_',' ') }}</span> {% endfor %}
+          {% if d.filename_mismatch %}<div class="warnflag" style="font-size:.85rem;margin-top:.2rem">Named like a {{ d.filename_hint.replace('_',' ') }}, but it isn't one</div>{% endif %}
+          {% if d.multi_type %}<div><small>Several documents in one file, split by page</small></div>{% endif %}</div>
+        <div class="pages">
+          {% for p in d.pages %}<a class="pg {{ 'ocr' if p.method == 'ocr' }}" href="{{ url_for('source_view', sid=r.submission_id, file=d.file, page=p.n) }}" title="{{ p.reason }}">p.{{ p.n }} {{ p.doc_type.replace('_',' ') }} <span class="m">{{ '%.0f'|format((p.confidence or 0)*100) }}%{% if p.method == 'ocr' %} · OCR {{ p.ocr_conf|round|int }}{% endif %}</span>{% if p.quality and p.quality.low_quality %} <span class="warnflag">low quality</span>{% endif %}</a>{% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+    <p><small>Dashed pages were image-only and read by OCR. Click any page to see the image beside the text the system read.</small></p>
+    {% if r.duplicates %}
+    <details class="fold"><summary>{{ r.duplicates|length }} duplicates merged</summary>
+      <div class="panel"><table><tbody>{% for d in r.duplicates %}<tr><td><b>{{ d.entity }}</b></td><td>{{ d.detail }}</td><td>{% for s in d.sources %}{{ chip(s) }}{% endfor %}</td></tr>{% endfor %}</tbody></table></div>
+    </details>{% endif %}
+  </section>
+
+  <!-- EXTRACTED -->
+  <section id="extracted">
+    <header><h2>Extracted information</h2><span class="count">percentages are extraction confidence; each chip opens the page the value came from</span></header>
+    <div class="grid2">
+      <div class="panel"><h3>Insured</h3><dl class="kv">
+        {{ field('insured_name','Named insured') }}{{ field('entity_type','Entity') }}{{ field('fein','FEIN') }}
+        {{ field('dot_number','DOT #') }}{{ field('mc_number','MC #') }}{{ field('mailing_address','Mailing address') }}
+        {{ field('garaging_address','Garaging address') }}{{ field('years_in_business','Years in business') }}
+        {{ field('owner_name','Owner / contact') }}{{ field('signature_date','Signed') }}</dl></div>
+      <div class="panel"><h3>Operations and coverage requested</h3><dl class="kv">
+        {{ field('operation','Operation') }}{{ field('farthest_territory','Farthest territory') }}{{ field('reefer','Reefer') }}
+        {{ field('hazmat','Hazmat') }}{{ field('intermodal','Intermodal') }}{{ field('cross_border','Cross-border') }}
+        {{ field('telematics_pct','Telematics') }}{{ field('al_limit','Auto liability limit') }}{{ field('pd_requested','Physical damage') }}
+        {{ field('cargo_requested','Cargo') }}{{ field('cargo_limit','Cargo limit') }}{{ field('agency_name','Agency') }}</dl></div>
+    </div>
+
+    <div class="panel" style="margin-top:1rem"><h3>Drivers</h3>
+    <table>
+      <thead><tr><th>Driver</th><th>DOB / age</th><th>License</th><th>CDL experience</th><th>MVR</th><th>Violations (points)</th></tr></thead>
+      <tbody>{% for d in r.drivers %}
+        <tr>
+          <td><b>{{ d.name }}</b><br><small>hired {{ d.hire_date|us }}</small>{% for f in d.flags %}<br><span class="tag t-refer">{{ f }}</span>{% endfor %}</td>
+          <td>{{ d.dob.value|us }} · {{ d.age }}<br>{{ conf(d.dob.confidence) }}{% if d.dob.status=='conflict' %} <a class="tag t-open" href="#{{ d.dob.conflict }}">{{ d.dob.conflict }}</a>{% endif %}</td>
+          <td>{{ d.license_state }} {{ d.license_no }}<br>{% if d.cdl %}<span class="tag t-pass">CDL Class {{ d.license_class }}</span>{% else %}<span class="tag t-decline">No CDL · {{ d.license_type|lower }} Class {{ d.license_class }}</span>{% endif %}
+            {% if d.limited_term %}<span class="tag t-refer">limited-term</span>{% endif %}<br><small>valid to {{ d.license_exp|us }}{% if d.license_images %} · photo matched{% endif %}</small></td>
+          <td>{% if d.years_cdl %}<b>{{ d.years_cdl }} yrs</b><br><small>{{ d.cdl_since_basis }}</small>{% else %}-{% endif %}</td>
+          <td>{% if d.mvr %}{{ d.mvr.order_date|us }}<br>{{ chip(d.mvr.source) }}{% if d.stale_mvrs %}<br><small>{{ d.stale_mvrs }} older MVR ignored</small>{% endif %}{% else %}<span class="tag t-missing">none</span>{% endif %}</td>
+          <td>{% if d.mvr and d.mvr.violations %}{% for v in d.mvr.violations %}{{ v.date|us }} {{ v.description.split('  ')[0]|truncate(30)|lower|capitalize }} ({{ v.points }})<br>{% endfor %}{% else %}<span class="muted">Clean</span>{% endif %}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table></div>
+
+    <div class="panel" style="margin-top:1rem"><h3>Power units</h3>
+    <table>
+      <thead><tr><th>Unit</th><th>VIN</th><th>VIN decode</th><th class="num">Cost new</th><th class="num">Stated value</th><th>Notes</th></tr></thead>
+      <tbody>{% for v in r.vehicles %}
+        <tr><td><b>{{ v.year }} {{ v.make }}</b><br><small>{{ v.vehicle_type|lower|capitalize }}</small></td><td><code>{{ v.vin }}</code><br>{{ chip(v.source) }}</td>
+        <td>{% if v.vin_check.valid_length %}{{ v.vin_check.model_year }} {{ v.vin_check.make }}<br><small>check digit {{ 'ok' if v.vin_check.check_digit_ok else 'fails' }}</small>{% else %}<span class="tag t-decline">{{ v.vin_check.length }} characters</span><br><small>{{ v.vin_check.make or '' }}</small>{% endif %}</td>
+        <td class="num">{{ v.cost_new|money }}</td><td class="num">{% if v.stated_value %}{{ v.stated_value|money }}{% else %}<span class="tag t-missing">missing</span>{% endif %}</td>
+        <td>{% if v.loss_refs %}<small>In claim {{ v.loss_refs|join(', ') }}</small>{% endif %}</td></tr>{% endfor %}
+        {% for u in r.unscheduled_vehicles %}
+        <tr style="background:var(--refer-bg)"><td><b>{{ u.desc.replace('-',' ') }}</b><br><span class="tag t-refer">not on schedule</span></td><td><code>{{ u.vin }}</code><br>{{ chip(u.source) }}</td>
+        <td>{{ u.vin_year }} {{ u.vin_make }}</td><td></td><td></td><td><small>Appears in claim {{ u.claim }} ({{ u.loss_date|us }}); carrier flagged it as an unreported unit</small></td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+
+    <div class="grid2" style="margin-top:1rem">
+      <div class="panel"><h3>Loss history</h3>
+      <table>
+        <thead><tr><th>Term</th><th>Line</th><th>Carrier</th><th class="num">Incurred</th></tr></thead>
+        <tbody>{% for t in r.loss_terms %}
+          <tr><td>{{ t['from']|us }}<br><small>to {{ t['to']|us }}</small></td><td><b>{{ t.line }}</b></td>
+          <td>{{ t.carrier|title|truncate(28) }}<br>{{ chip(t.source) }}{% if t.kind=='no_loss_letter' %}<br><span class="tag t-refer">letter: “no paid losses” only</span>{% endif %}</td>
+          <td class="num">{% if t.incurred is not none %}<b>{{ t.incurred|money }}</b>{% else %}<small>not stated</small>{% endif %}{% if t.claims %}<br><small>{{ t.claims|length }} claims · {{ t.reserved|money }} open</small>{% endif %}</td></tr>
+          {% for c in t.claims %}<tr><td colspan="4" style="padding-left:1.4rem;font-size:.86rem;background:#fafbfc">
+            <b>{{ c.claim_no }}</b> {{ c.status|lower }} · loss {{ c.loss_date|us }}, reported {{ c.reported|us }}{% if c.late %} <span class="tag t-refer">late</span>{% endif %}
+            · {{ c.driver|title }}{% if c.driver_status=='Unreported' %} <span class="tag t-refer">unreported driver</span>{% endif %}
+            · {{ c.location|title }} · “{{ c.description }}” · {{ c.incurred|money }}{% if c.legal %} <span class="tag t-high">legal</span>{% endif %}</td></tr>{% endfor %}
+        {% endfor %}</tbody>
+      </table></div>
+      <div class="panel"><h3>Prior insurance, as stated by the agent</h3>
+      <table><thead><tr><th>Term</th><th>Carrier</th><th>Lines</th><th class="num">Units</th></tr></thead>
+        <tbody>{% for p in r.prior_policies %}<tr><td>{{ p['from']|us }}<br><small>to {{ p['to']|us }}</small></td><td>{{ p.carrier|title }}</td><td><small>{{ p.coverages }}</small></td><td class="num"><b>{{ p.units }}</b></td></tr>{% endfor %}</tbody></table>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:1rem"><h3>Where the trucks actually ran (IFTA)</h3>
+      <p>{{ r.ifta.total_miles|num }} miles across {{ r.ifta.by_state|length }} jurisdictions in 4 quarters. <b>{{ r.ifta.non_listed_share|pct }}</b> of them were in states outside the program's available list.</p>
+      <div class="terr" role="img" aria-label="{{ r.ifta.non_listed_share|pct }} of miles outside available states">
+        <div class="in" style="width:{{ (1-r.ifta.non_listed_share)*100 }}%"></div><div class="out" style="width:{{ r.ifta.non_listed_share*100 }}%"></div></div>
+      <small><span style="color:var(--pass)">■</span> available states &nbsp; <span style="color:var(--refer)">■</span> other states</small>
+      <div class="grid2" style="margin-top:.8rem">
+        <table><thead><tr><th>Quarter</th><th class="num">Miles</th><th>Read check</th></tr></thead><tbody>
+        {% for q in r.ifta.quarters %}<tr><td>{{ q.period }}<br>{{ chip(q.file ~ ' p.2') }}{% if 'LLC' in (q.taxpayer or '') %} <span class="tag t-refer">filed as LLC</span>{% endif %}{% if q.penalty %} <span class="tag t-refer">late-filing penalty</span>{% endif %}</td><td class="num"><b>{{ q.total_miles|num }}</b></td>
+          <td>{% if q.reconciles %}<span class="tag t-pass">{{ q.jurisdictions }} rows add up</span>{% else %}<span class="tag t-refer">rows add to {{ q.rows_sum|num }}</span><br><small>don't trust this quarter's state split</small>{% endif %}</td></tr>{% endfor %}
+        </tbody></table>
+        <table><thead><tr><th>Top states</th><th class="num">Miles</th><th class="num">Share</th></tr></thead><tbody>
+        {% for s, m in r.ifta.by_state.items() %}{% if loop.index <= 8 %}<tr><td>{{ s }}{% if s in r.ifta.non_listed_states %} <span class="tag t-refer">not listed</span>{% endif %}</td><td class="num">{{ m|num }}</td><td class="num">{{ (m / r.ifta.total_miles)|pct }}</td></tr>{% endif %}{% endfor %}
+        </tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- MISSING -->
+  <section id="missing">
+    <header><h2>Missing information</h2><span class="count">{{ r.missing|length }} items to request, each tied to the rule or conflict that needs it</span></header>
+    <div class="panel"><table><thead><tr><th>Ask the agent for</th><th class="hide-sm">Why</th><th>Raised by</th></tr></thead><tbody>
+    {% for m in r.missing %}<tr><td>{{ m.item }}</td><td class="hide-sm"><small>{{ m.why }}</small></td><td><a class="tag t-low" href="#{{ m.source if m.source.startswith('C') else 'r-' ~ m.source }}">{{ m.source }}</a></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <!-- CONFLICTS -->
+  <section id="conflicts">
+    <header><h2>Conflicts between documents</h2><span class="count">{{ open_conf|length }} need a decision · {{ closed_conf|length }} settled automatically or by you</span></header>
+    {% for sev in ['high', 'medium', 'low'] %}{% for c in open_conf if c.severity == sev %}{{ conflict_card(c) }}{% endfor %}{% endfor %}
+    {% if not open_conf %}<div class="panel">Every conflict has been settled.</div>{% endif %}
+    {% if closed_conf %}
+    <details class="fold"><summary>{{ closed_conf|length }} settled conflicts</summary>
+      {% for c in closed_conf %}{{ conflict_card(c) }}{% endfor %}
+    </details>{% endif %}
+  </section>
+
+  <!-- AI FINDINGS -->
+  <section id="findings">
+    <header><h2>AI findings</h2><span class="count">{{ r.analysis.engine }} · every finding cites its evidence</span></header>
+    {% for sev in ['high', 'medium', 'low'] %}{% for f in r.analysis.findings if f.severity == sev %}
+    <div class="finding {{ f.severity }}" id="f-{{ f.id }}">
+      <h3>{{ f.title }} <span class="tag t-{{ f.severity }}">{{ f.severity }}</span> {{ conf(f.confidence) }}
+        <small class="muted">{{ f.category }}{% if not f.grounded %} · <span class="warnflag">ungrounded, verify</span>{% endif %}</small></h3>
+      <p>{{ f.detail }}</p>
+      <div>{% for e in f.evidence %}{{ chip(e) }}{% endfor %}</div>
+    </div>
+    {% endfor %}{% endfor %}
+  </section>
+
+  <!-- RULES -->
+  <section id="rules">
+    <header><h2>Guideline rules</h2><span class="count">{{ n_flag }} need review · {{ rules.counts.info }} for information · {{ passed|length }} passed · rule set {{ rules.rules_version }}</span></header>
+    <div class="panel"><table>
+      <thead><tr><th>Rule</th><th>Result</th><th>What the system found</th><th class="hide-sm">Guideline says</th></tr></thead>
+      <tbody>{% for x in flagged|sort(attribute='effect') %}{{ rule_row(x) }}{% endfor %}</tbody></table></div>
+    <details class="fold"><summary>{{ passed|length }} rules passed</summary>
+      <div class="panel"><table><tbody>{% for x in passed %}{{ rule_row(x) }}{% endfor %}</tbody></table></div>
+    </details>
+  </section>
+
+  <!-- ACTIONS -->
+  <section id="actions">
+    <header><h2>Recommended next actions</h2></header>
+    <div class="grid2">
+      <div class="panel">
+        <table><tbody>{% for a in r.analysis.recommendations %}
+          <tr><td style="width:7rem"><span class="tag t-type">{{ a.owner }}</span></td><td>{{ a.action }}<br><small>{{ a.rationale }}</small></td></tr>{% endfor %}
+        </tbody></table>
+        <form method="post" action="{{ url_for('uw_action', sid=r.submission_id) }}" style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+          <input type="text" name="note" placeholder="Decision note" style="flex:1 1 100%">
+          <button class="btn primary" name="action" value="accept">Accept recommendation</button>
+          <button class="btn ghost" name="action" value="assign">Assign to me</button>
+          <button class="btn ghost" name="action" value="quote">Release for quoting</button>
+          <button class="btn ghost" name="action" value="decline">Decline</button>
+        </form>
+        {% if r.actions %}<ul style="margin-top:.8rem">{% for a in r.actions %}<li><b>{{ a.action }}</b>{% if a.note %} - {{ a.note }}{% endif %} <small>{{ a.by }}, {{ a.at[:16].replace('T',' ') }}</small></li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="panel">
+        <h3>Draft request to the agent</h3>
+        <form method="post" action="{{ url_for('uw_action', sid=r.submission_id) }}">
+          <p><small>To {{ r.analysis.agent_email.to }} · {{ r.analysis.agent_email.subject }}</small></p>
+          <textarea name="body" aria-label="Email body">{{ r.analysis.agent_email.body }}</textarea>
+          <button class="btn primary" name="action" value="send_request" style="margin-top:.6rem">Send request to agent</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- AUDIT -->
+  <section id="audit">
+    <header><h2>Audit trail</h2><span class="count">append-only record of what the system, the rules, the AI and people did</span></header>
+    <div class="panel"><table><thead><tr><th>Time (UTC)</th><th>Who</th><th>Event</th><th class="hide-sm">Detail</th></tr></thead><tbody>
+    {% for a in audit if a.action != 'document-read' %}<tr><td style="white-space:nowrap">{{ a.ts.replace('T',' ')[5:19] }}</td><td>{{ a.actor }}</td><td><b>{{ a.action }}</b></td><td class="hide-sm"><small>{{ (a.detail or '')|truncate(200) }}</small></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var links = Array.from(document.querySelectorAll('#toc a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  function spy() {
+    var y = window.scrollY + 120, cur = 0;
+    secs.forEach(function (s, i) { if (s && s.offsetTop <= y) cur = i; });
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) cur = secs.length - 1;
+    links.forEach(function (a, i) { a.classList.toggle('on', i === cur); });
+  }
+  window.addEventListener('scroll', spy, { passive: true }); spy();
+  // open a folded group when a link points inside it
+  function reveal() { var t = location.hash && document.querySelector(location.hash); var d = t && t.closest('details'); if (d) { d.open = true; t.scrollIntoView(); } }
+  window.addEventListener('hashchange', reveal); reveal();
+})();
+</script>
+{% endblock %}
